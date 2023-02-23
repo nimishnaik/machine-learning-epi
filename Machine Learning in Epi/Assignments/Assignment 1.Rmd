@@ -1,0 +1,11 @@
+---
+title: "Assignment 1 Trial"
+output: html_document
+date: "2023-01-18"
+---
+
+```{r}
+my_data <- read.csv("bcdata_Assignment1.csv")
+summary(my_data)
+```
+

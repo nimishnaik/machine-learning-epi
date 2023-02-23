@@ -1,0 +1,222 @@
+---
+title: "ML_Assignment 6"
+output: 
+  word_document:
+  html_document:
+    toc: true
+    toc_float: true
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load Packages Needed for the Assignment
+
+```{r load_packages}
+
+library(tidyverse)
+library(janitor)
+library(yardstick)
+library(stats)
+library(factoextra)
+library(cluster)
+library(caret)
+library(NHANES)
+library(e1071)
+library(rpart)
+library(rpart.plot)
+library(pROC)
+library(kernlab)
+
+```
+
+## Assignment Instructions:
+
+For this assignment, you will:
+
+1. Restrict the NHANES data to the list of 11 variables below. Partition the data into training and testing using a 70/30 split.
+
+2. Construct three prediction models to predict diabetes using the 11 features from NHANES. You will use the following three algorithms to create your prediction models:
+
+a) Classification Tree
+
+b) Support Vector Classifier (i.e. Support Vector Machine with a linear classifier)
+
+c) Logistic regression.
+
+3. You will optimize each model using cross-validation to choose hyperparameters in the training data and then compare performance across models.
+
+4. Select a "optimal" model and calculate final evaluation metrics in the test set.
+
+***
+
+### Step 1: Load and Prepare Dataset
+
+```{r}
+
+data(NHANES)
+
+a6.data <- NHANES %>%
+  select("Age", "Race1", "Education", "HHIncome", "Weight", "Height", "Pulse", "Diabetes", "BMI", "PhysActive", "Smoke100")
+
+#Remove Missing Variables
+a6.data <- na.omit(a6.data)
+
+#Renove Duplicate Variables
+a6.data <- distinct(a6.data)
+
+#Centering and Scaling: Although not needed for classification trees, this would be important for SVM and logistic regression.
+#set.up.preprocess<-preProcess(a6.data, method=c("center", "scale"))
+
+#Output pre-processed values
+#transformed.vals<-predict(set.up.preprocess, a6.data)
+
+```
+
+### Step 2: Data Partitioning
+
+```{r partitioning}
+set.seed(123)
+
+train.index<-createDataPartition(a6.data$Diabetes, p=0.7, list=FALSE)
+
+a6.data.train<-a6.data[train.index,]
+a6.data.test<-a6.data[-train.index,]
+
+```
+
+### Step 3: Training the Model using different methods:
+
+#### 1. Classification Tree
+
+```{r training 1}
+
+set.seed(123)
+
+#Creating 10-fold cross-validation and using down-sampling because of imbalance in data
+train.control.class<-trainControl(method="cv", number=10, sampling="down", classProbs = T)
+
+#Create sequence of cp parameters to try 
+grid.2<-expand.grid(cp=seq(0.001, 0.3, by=0.01))
+
+#Train model
+tree.diabetes <-train(Diabetes ~., data=a6.data.train, method="rpart",trControl=train.control.class, tuneGrid=grid.2)
+tree.diabetes$bestTune
+
+tree.diabetes
+
+rpart.plot(tree.diabetes$finalModel)
+
+#Note you can obtain variable importance on the final model within training data
+varImp(tree.diabetes)
+
+#Note you can get accuracy metric and confusion matrix from training.
+cm.tree <- confusionMatrix(tree.diabetes)
+cm.tree
+
+```
+
+After cross-validating hyperparameters and evaluating on the training set, the average accuracy of the classification tree model is __0.6727__.
+
+#### 2. Support Vector Classifier (i.e. Support Vector Machine with a linear classifier)
+
+```{r training2}
+
+set.seed(123)
+
+#Creating 10-fold cross-validation and using down-sampling because of imbalance in data
+train.control.class<-trainControl(method="cv", number=10, sampling="down", classProbs = T)
+
+#Incorporate different values for cost (C)
+svm.diabetes <- train(Diabetes ~ ., data = a6.data.train, method="svmLinear",  
+                   trControl=train.control.class,
+                   preProcess=c("center", "scale"),
+                   tuneGrid=expand.grid(C=seq(0.001,2, length=30)))
+
+#Visualize accuracy versus values of C
+plot(svm.diabetes)
+
+#See information about final model
+svm.diabetes$finalModel
+
+#Obtain metrics of accuracy from training
+confusionMatrix(svm.diabetes)
+
+```
+
+After cross-validating hyperparameters and evaluating on the training set, the average accuracy of the SVM model is __0.7246__.
+
+#### 3. Logistic Regression Model
+
+```{r training3}
+set.seed(123)
+
+#Setting a cross validation control
+cv_results <- trainControl(method = "cv", number = 10, sampling = "down", classProbs = T)
+
+#Training a logistic regression model with cross validation
+log.diabetes <- train(Diabetes ~ ., data = a6.data.train,
+                      method = "glm",
+                      family = "binomial",
+                      trControl = cv_results,
+                      preProc=c("center", "scale"))
+
+
+log.diabetes$results
+confusionMatrix(log.diabetes)
+
+```
+
+After cross-validating hyperparameters and evaluating on the training set, the average accuracy of the logistic regression model is __0.7186__.
+
+### Step 4: Final Model Evaluation
+
+After comparing the accuracies of all 3 models, the SVM model has the highest accuracy. I would go ahead with this model for the final evaluation.
+
+
+```{r evaluation}
+set.seed(123)
+
+svm.prediction.final <- predict(svm.diabetes,newdata = a6.data.test)
+svm.confusion.matrix <- confusionMatrix(svm.prediction.final, a6.data.test$Diabetes, positive = "Yes")
+
+postResample(svm.prediction.final,a6.data.test$Diabetes)
+
+svm.confusion.matrix
+
+#Create ROC Curve for Analysis
+pred.prob<-predict(svm.diabetes, a6.data.test, type="prob")
+
+#Another potential evaluation: Area under the Reciver Operating Curve (AUROC)
+svm.analysis <- roc(response=a6.data.test$Diabetes, predictor=pred.prob[,2])
+plot(1-svm.analysis$specificities,svm.analysis$sensitivities,type="l",
+ylab="Sensitivity",xlab="1-Specificity",col="black",lwd=2,
+main = "ROC Curve for Diabetes Classification")
+abline(a=0,b=1)
+
+#Area Under the Curve
+svm.analysis$auc
+
+```
+
+__Final Evaluation Metrics for the SVM Model__:
+
+- __Accuracy__ : 0.7011 (95% CI: 0.6744 - 0.7268)
+
+- __Sensitivity__ : 0.78322 
+
+- __Specificity__ : 0.69007
+
+- __ROC Area Under the Curve__: 0.8038
+
+***
+
+__5. List and describe at least two limitations/considerations of the model generated by this analysis. Limitations can be analytical or they can be considerations that need to be made regarding how the model would be applied in practice.__
+
+- 1. __Causal Model vs Predictive Model__: The SVM model created through my analysis is effective in predicting the Diabetes among patients based on different features from a publically available dataset, it may be inappropriate to make causal inference about the risk factors that cause diabetes in different patients. To make causal inference, we need methodology based on theory with a preexisting causal hypothesis and selected features to be used in the model, with other epidemiology study considerations. 
+- 2. __Generalizability of the SVM Model__: In this analysis, the SVM model was trained on NHANES data. The predictions and performance metrics of this model may not apply to populations from different countries or populations having different disease prevalence, or differing proportions of demographic, environment, or social factors. Moreover, NHANES data is collected through self-reported surveys, which may also introduce bias within the data set that may not reflect the true data.
+
+******
+

@@ -1,0 +1,155 @@
+---
+title: "Assignment 4"
+author: "Filippo Ravalli"
+date: "2023-02-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read data in & libraries
+```{r}
+library(tidyverse)
+library(labelled)
+library(caret)
+library(cluster)
+library(ggbiplot)
+library(stats)
+library(factoextra)
+library(cluster)
+```
+
+## Part 1
+
+## Data Cleaning
+
+```{r}
+data<-read.csv("class4_p1.csv")
+glimpse(data)
+data <- data %>%
+  rename(hypten = chronic1, 
+         diabetes = chronic3, 
+         asthma=chronic4,
+         cig_use = tobacco1,  
+         alc_drink = alcohol1, 
+         pa_min = gpaq8totmin, 
+         walk_7days = gpaq11days, 
+         physical_act_q = habits5,
+         diet = habits7,
+         gender=dem3, 
+         hispanic=dem4,
+         us_cit=dem8)
+
+data <- data %>%
+  set_value_labels(
+    hypten = c("Yes" = 1, "No" = 2), 
+    diabetes = c("Yes" = 1, "No" = 2), 
+    asthma = c("Yes" = 1, "No" = 2), 
+    pa_min = c("most days" = 1, "some days" = 2, "never" = 3), 
+    physical_act_q = c("very active" = 1, "somewhat active" = 2, "not very active" = 3, "not active at all" = 4), 
+    diet = c("excellent" = 1, "very good" = 2, "good"=3, "fair"=4, "poor"=5), 
+    gender = c("male" = 1, "female" = 2), 
+    hispanic = c("Yes" = 1, "No" = 2), 
+    us_cit = c("USA" = 1, "outside USA"=2),
+    cig_use = c("most days" = 1, "some days" = 2, "never" = 3), 
+    alc_drink = c("most days" = 1, "some days" = 2, "never" = 3), 
+    agegroup=c("18-24"=1, "25-44"=2, "45-64"=3, "65+"=4),
+    povertygroup=c("<100%"=1,"100-99%"=2, "200-399%"=3, "400-599%"=4, "600%+"=5, "dont know"=6))
+    
+      
+
+data <- data %>%
+  mutate_if(is.labelled, to_factor)
+glimpse(data)
+```
+**Data that are continuous are bmi, walk7days (gpaq11days), & healthydays. The other variables are categorical.**
+
+## Data Partition
+```{r}
+set.seed(123)
+data_na_omit<-na.omit(data)
+train_index<-createDataPartition(data_na_omit$healthydays, p=0.7, list=FALSE)
+
+data_train<-data_na_omit[train_index,]
+data_test<-data_na_omit[-train_index,]
+```
+
+## Fit prediction models
+```{r}
+model1<-lm(healthydays~bmi+diabetes+agegroup, data=data_train)
+summary(model1)
+model2<-lm(healthydays~gender+povertygroup+us_cit+hispanic, data=data_train)
+summary(model2)
+```
+
+## Test models
+```{r}
+set.seed(123)
+predict_model1<-model1 %>% predict(data_test)
+RMSE(predict_model1, data_test$healthydays) #7.463758
+
+predict_model2<-model2 %>% predict(data_test)
+RMSE(predict_model2, data_test$healthydays) #7.540379
+```
+
+**Question 2**
+**Based on the RMSE values, model 1 is the more accurate as it has a lower RMSE comapred to model 2.**
+
+**Question 3**
+**The implementation of the final model would be helpful in a research setting where the question is trying to understand the effects of social factors, including Hispanic status, place of birth, poverty group, and gender.**
+
+
+## Part 2
+## Hierarchical analysis
+
+```{r}
+arrests<-USArrests
+
+arrests_nomiss<-na.omit(arrests)
+
+colMeans(arrests_nomiss, na.rm=TRUE)
+apply(arrests_nomiss, 2, sd, na.rm=TRUE)
+
+
+# Create Dissimilarity matrix
+diss.matrix <- dist(arrests_nomiss, method = "euclidean")
+
+# Hierarchical clustering using Complete Linkage
+clusters.h<- hclust(diss.matrix, method = "complete" )
+
+# Plot the obtained dendrogram
+plot(clusters.h, cex = 0.6, hang = -1)
+
+#create function to use within clusGap
+hclusCut <- function(x, k) list(cluster = cutree(hclust(dist(x, method="euclidian"), method="average"), k=k))
+
+gap_stat <- clusGap(arrests_nomiss, FUN = hclusCut, K.max = 10, B = 50)
+fviz_gap_stat(gap_stat)
+
+clusters.h.3<-cutree(clusters.h, k=3)
+table(clusters.h.3)
+
+#Alternatives for hierarchical clustering
+
+clusters.hcut<-hcut(arrests_nomiss, k=5, hc_func="hclust", hc_method="single", hc_metric="euclidian")
+
+clusters.hcut$size
+fviz_dend(clusters.hcut, rect=TRUE)
+fviz_cluster(clusters.hcut)
+
+gap_stat <- clusGap(arrests_nomiss, FUN = hcut, hc_method="single", K.max = 10, B = 5)
+fviz_gap_stat(gap_stat)
+
+input.feature.vals<-cbind(arrests_nomiss,cluster=clusters.hcut$cluster)
+
+input.feature.vals %>%
+  group_by(cluster) %>%
+  summarise_all(mean)
+```
+
+##
+
+##
+

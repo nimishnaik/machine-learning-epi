@@ -1,0 +1,101 @@
+---
+title: "ML Assignment 1"
+date: "2023-01-22"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(kableExtra)
+```
+
+### Reading in the Data
+```{r chunk1}
+my_data <- read.csv("bcdata_Assignment1.csv") %>% 
+  janitor::clean_names()
+```
+
+### Question 1: Formatted Table of Summary Stats
+```{r question1}
+my_data <- my_data %>% 
+  rename(mcp1=mcp_1)
+
+data_sum <- my_data %>% 
+  summarise_each(funs(mean=mean, median=median, minimum=min,maximum=max))
+
+data_tidy <- data_sum %>% 
+  pivot_longer(cols = everything(), names_to = c("statistics"), values_to = "values") %>%
+  separate(statistics, into = c("variables","statistics2"), sep = "_") %>%
+  pivot_wider(id_cols = variables, names_from = statistics2, values_from = values)
+
+kable(data_tidy, format = "html", options = "striped", align = "c") %>% 
+  column_spec(1:5,width = "5cm") %>% 
+  column_spec(1, bold = TRUE)
+
+```
+
+### Question 2: Recoding the BMI Variable
+```{r question2}
+my_data$bmi_cat <- ifelse(my_data$bmi < 16.5,"Severely Underweight",
+                          ifelse(my_data$bmi >= 16.5 & my_data$bmi < 18.5, "Underweight",
+                                 ifelse(my_data$bmi >= 18.5 & my_data$bmi < 25,"Normal Weight",
+                                        ifelse(my_data$bmi >= 25 & my_data$bmi < 30,"Overweight",
+                                               ifelse(my_data$bmi >= 30 & my_data$bmi < 35,"Obesity Class I",
+                                                      ifelse(my_data$bmi >= 35 & my_data$bmi < 40,"Obesity Class II","Obesity Class III"))))))
+
+table(my_data$bmi_cat)
+
+bmistuff <- select(my_data,bmi,bmi_cat)
+kable(bmistuff, format = "html", options = "striped", align = 'c') %>% 
+  column_spec(1:2, width = "5cm")
+```
+
+### Question 3: Bar Chart of Cases and Controls by bmi Category
+```{r question3}
+my_data$classification_new <- ifelse(my_data$classification == 1, "Healthy Controls", "Breast Cancer Cases")
+
+ggplot(data = my_data, aes(x = bmi_cat, fill=classification_new))+
+  geom_bar(position="fill")+
+  scale_y_continuous(labels = scales::percent)
+```
+
+### Question 4: Logistic Regression
+```{r question4}
+my_data$newcat <- ifelse(my_data$classification == 1, 0, 1)
+
+log_model <- glm(newcat ~ glucose + homa + leptin + bmi + age, data = my_data, family = binomial())
+logCI <- confint(log_model, level = 0.95)
+
+summary(log_model)
+kable(cbind(coef(summary(log_model)),logCI), format = "html", options = "striped", align = 'c') %>%
+  column_spec(1:6, width = "3cm")%>% 
+  column_spec(1, bold = TRUE)
+```
+#### \
+##### For a 1-unit increase in HOMA-IR, the estimated beta coefficient of the logistic regression model is __0.274. __
+##### That is, for every 1-unit increase in HOMA-IR, the estimated log odds of breast cancer increase by __0.274. __
+##### We are 95% confident that the true beta coefficient lies between __-0.026 and 0.653.__
+
+### Question 5: Linear Regression
+```{r question5}
+lin_model <- lm(insulin ~ bmi + age + glucose, data = my_data)
+linCI <- confint(lin_model, level = 0.95)
+
+summary(lin_model)
+kable(cbind(coef(summary(lin_model)),linCI), format = "html", options = "striped", align = 'c') %>%
+  column_spec(1:6, width = "3cm") %>% 
+  column_spec(1, bold = TRUE)
+```
+#### \
+##### For a 1-unit increase in age, the estimated beta coefficient of the linear regression model is __-0.054.__
+##### That is, for every 1-unit increase in age, insulin levels decrease by __0.054 units on average.__
+##### We are 95% confident that the true beta coefficient lies between __-0.157 and 0.049.__
+#### \
+
+
+
+

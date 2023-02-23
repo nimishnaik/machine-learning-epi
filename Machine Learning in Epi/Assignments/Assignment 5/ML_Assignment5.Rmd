@@ -1,0 +1,218 @@
+---
+title: "Assignment 5"
+output: 
+  word_document:
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load Packages Needed for Both Questions
+
+```{r load_packages}
+library(tidyverse)
+library(janitor)
+library(yardstick)
+library(stats)
+library(factoextra)
+library(cluster)
+library(caret)
+```
+
+## Assignment Instructions:
+
+__Goal: You want to predict current alcohol consumption but it is expensive and time-consuming to administer all of the behavioral testing that produces the personality scores. You will conduct a reproducible analysis to build and test classification models using regularized logistic regression and traditional logistic regression.__
+
+Address the following:
+
+You should create and compare three different models:
+
+- A model that chooses alpha and lambda via cross-validation using all of the features
+- A model that uses all the features and traditional logistic regression
+- A lasso model using all of the features
+
+You should tune and compare the performance of all three models within the training set using cross-validation and then decide which model you would choose as your final model. Provide justification for your choice.
+
+Apply your final model in the test set and report your final evaluation metrics. 
+
+Produce a shareable report of your analysis and results using R Markdown.
+***
+
+### Step 1: Load and Prepare Dataset
+
+```{r prepdata}
+set.seed(123)
+
+#Loading in Data
+a5.data <- read.csv("~/Desktop/Nimish/Columbia MPH/4. Spring 2023/Machine Learning in Epi/Assignments/Assignment 5/alcohol_use.csv") %>% 
+  clean_names()
+
+#Convert all categorical variables to factors   
+a5.data <- a5.data %>% 
+  mutate(alc_consumption = as.factor(alc_consumption))
+
+#Strip ID
+a5.data$x <- NULL
+
+#Remove Missing Variables
+a5.data <- na.omit(a5.data)
+
+#Check Data Structure
+str(a5.data)
+
+#Finding correlated predictors
+a5.data.numeric <- a5.data %>% dplyr::select(where(is.numeric))
+correlations<-cor(a5.data.numeric, use="complete.obs")
+high.correlations<-findCorrelation(correlations, cutoff=0.4) #None Found
+
+a5.data.lowcor<-a5.data[,-high.correlations]
+
+#Centering and Scaling
+set.up.preprocess<-preProcess(a5.data.lowcor, method=c("center", "scale"))
+
+#Output pre-processed values
+transformed.vals<-predict(set.up.preprocess, a5.data.lowcor)
+```
+
+### Step 2: Data Partitioning
+
+```{r partitioning}
+set.seed(123)
+
+train.index<-createDataPartition(transformed.vals$alc_consumption, p=0.7, list=FALSE)
+
+a5.data.train<-transformed.vals[train.index,]
+a5.data.test<-transformed.vals[-train.index,]
+
+
+#Construct k-folds in your data
+train.folds<-createFolds(transformed.vals$alc_consumption, k=10, list=FALSE)
+
+```
+
+### Step 3: Training the Model using different methods:
+
+#### 1. A Model that chooses __Alpha and Lambda__ via cross-validation using all of the features
+
+```{r training 1}
+set.seed(123)
+
+#Training an Elastic Net Model
+
+en.model<- train(alc_consumption ~., data = a5.data.train, 
+                 method = "glmnet",
+                 trControl = trainControl("cv", number = 10), 
+                 preProc=c("center", "scale"),
+                 tuneLength=10
+  )
+
+#Print the values of alpha and lambda that gave best prediction
+en.model$bestTune
+
+#Accuracy
+en.model$results$Accuracy[36]
+
+#   Alpha   Lambda          Accuracy
+#   0.4     0.2578427450    0.8515577
+
+```
+
+#### 2. A model that uses __all the features__ and __traditional regression__.
+
+```{r training 2}
+set.seed(123)
+
+#Training a Logistic Regression Model
+log.model <- glm(alc_consumption ~ ., data = a5.data.train, 
+                 family = "binomial")
+
+#Setting a cross validation control
+cv_results <- trainControl(method = "cv", number = 10)
+
+#Training a logistic regression model with cross validation
+cv.log.model <- train(alc_consumption ~ ., data = a5.data.train,
+                      method = "glm",
+                      family = "binomial",
+                      trControl = cv_results,
+                      preProc=c("center", "scale"))
+
+
+cv.log.model$results
+#      Parameters       Accuracy 
+#       None            0.7826045
+
+```
+
+#### 3. A lasso model that uses __all the features__.
+
+```{r training 3}
+set.seed(123)
+
+#Create grid to search lambda
+lambda<-10^seq(-3,3, length=100) #Creating lambda grid
+
+#Training a Lasso Model
+lasso.model <- train(alc_consumption ~., data=a5.data.train, 
+                 method="glmnet", 
+                 trControl=trainControl("cv", number=10), 
+                 preProc=c("center", "scale"), 
+                 tuneGrid=expand.grid(alpha=1, lambda=lambda)
+)
+
+
+lasso.model$bestTune
+
+lasso.model$results$Accuracy[40]
+
+#   Alpha       Lambda        Accuracy
+#   1           0.231013      0.8515577
+
+```
+
+
+To compare the three models, I created examined the accuracies for each model based on the cross-validation within the training set.
+
+1. Elastic Net Model Accuracy: __0.8515577__
+
+2. Traditional Logistic Regression Model Accuracy: __0.7826045__
+
+3. Lasso Model Accuracy: __0.8515577__
+
+The lasso model and the elastic GLM modeel have higher accuracy than the traditional logistic regression model, so we can discard the logistic regression model.
+
+Since both the models have the same accuracy, the Lasso Model is perhaps the best model for predicting the current alcohol use prediction, since the Lasso model is itself a specialized form of the elastic GLM model that is geared towards feature selection and helps us select the best features.
+
+### Step 4: Final Model Evaluation for the Lasso Model
+
+```{r evaluation}
+set.seed(123)
+
+lasso.prediction.final <- predict(lasso.model,newdata = a5.data.test)
+lasso.confusion.matrix <- confusionMatrix(lasso.prediction.final, a5.data.test$alc_consumption, positive = "CurrentUse")
+
+postResample(lasso.prediction.final,a5.data.test$alc_consumption)
+
+lasso.confusion.matrix
+
+```
+
+Model Evalutation Metrics:
+
+__Accuracy :        0.8549 (95% CI: 0.8231, 0.8829)__
+
+__Sensitivity :     1.0000__
+
+__Specificity :     0.6894__          
+
+__Balanced Accuracy : 0.8447__
+
+---------------------------------------------
+
+__What research questions could this analysis either a) directly address or b) indirectly help to address by providing information that could be used in subsequent analyses? Limit this response to no more than 1 paragraph. Be sure to use complete sentences.__
+
+Answer:
+
+Based on the above analysis, we can directly address research questions related to __prediction__ and __feature selection__ which help us predict the risk of a patient's alcohol consumption behavior based on the optimum features that are a part of our model. This analysis helps us to build and compare different models that can be used to predict risk of alcohol consumption, and choose the most parsimonious and accurate models that are most effective in predicting the outcome variable. We can adapt this analysis to feature selection in a granular way by comparing models with subsets of all features.
+

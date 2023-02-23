@@ -1,0 +1,171 @@
+---
+title: "Practice Markdown"
+date: "2023-01-22"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(kableExtra)
+library(dplyr)
+library(janitor)
+library(gapminder)
+
+options(tibble.print_min=5)
+```
+
+## R Markdown
+
+
+#### This is my practice document
+
+#### Bullets
+* Hello
+* Hi
+* How are you
+  * Is this working? Yes, it is.
+
+## Chunk 1
+```{r chunk_1}
+
+n = 2;
+print(n)
+
+dataex = tibble(
+  vec_num = 5:8,
+  vec_char = c("My", "Name", "is", "Nimish"),
+  vec_log = c(TRUE, FALSE, FALSE, TRUE),
+  vec_fac = factor(c("male", "male", "female", "male"))
+)
+mutate(dataex, newnum = vec_num + 10)
+dataex
+
+newdata <- read.csv("bcdata_Assignment1.csv") %>% 
+  janitor::clean_names()
+
+tibble(newdata)
+
+```
+
+``` {r something, echo=TRUE}
+
+mean(c(1,2,3,4,5))
+
+```
+## Chunk 2 
+```{r summarizing}
+
+ newdata<-newdata %>%
+  mutate(bmi_recode <- ifelse(bmi<16.5, "Severely Underweight", 
+                           ifelse(bmi<18.5 & bmi >=16.5, "Underweight",
+                                  ifelse(bmi>=18.5 & bmi<24.9, "Normal Weight",
+                                         ifelse(bmi>=25 & bmi<29.9, " Overweight",
+                                                ifelse(bmi>=30 & bmi<34.9, "Obesity Class I",
+                                                       ifelse(bmi>=35 & bmi<39.9, "Obesity Class II",
+                                                              ifelse(bmi>=40, "Obesity Class III", NA_character_))))))))
+
+table(newdata$bmi_recode)
+```
+
+## Chunk 3
+```{r classifying}
+
+newdata$classcat <- ifelse(newdata$classification==1, "Controls", "Cases")
+
+  ggplot(data = newdata, aes(x = newdata$bmi_recode, fill=newdata$classcat))+
+  geom_bar(position="fill")+
+  scale_y_continuous(labels = scales::percent)
+```
+
+## Data Tidying
+```{r DataTidying}
+playdata <- read.csv("bcdata_Assignment1.csv") %>%      #I read in the data from the .csv file
+  janitor::clean_names()                                #cleaned the names
+playdata <- playdata %>% 
+  rename(mcp1=mcp_1)                                    #removed the aberrant _ causing errors
+
+summary(playdata)
+
+#Easy way to get a table with many columns and 1 row with all statistics values
+data_sum <- playdata %>% 
+  select(c(1:10)) %>% 
+  summarise_each(funs(mean=mean, median=median, minimum=min,maximum=max))
+
+data_tidy <- data_sum %>% 
+  gather(stat, val) %>% #now we have two columns
+  separate(stat, into = c("var","stat"), sep = "_") %>% #separated the name column into variable and its corresponding stat
+  spread(stat,val) %>% #spread it out
+  select(var,mean,median,minimum,maximum) #this is not needed also
+
+#Same but using pivot() functions
+data_tidy2 <- data_sum %>% 
+  pivot_longer(cols = everything(), names_to = c("statistics"), values_to = "values") %>%
+  separate(statistics, into = c("variables","statistics2"), sep = "_") %>%
+  pivot_wider(id_cols = variables, names_from = statistics2, values_from = values)
+
+kable(data_tidy2, format = "html", options = "striped", align = "c") %>% 
+  column_spec(1:5,width = "5cm")
+
+
+```
+
+## Next Steps
+```{r next steps}
+pulse_df = 
+  haven::read_sas("public_pulse_data.sas7bdat") %>%
+  janitor::clean_names()
+
+pd_tidy <- pulse_df %>% 
+  pivot_longer(
+    cols = bdi_score_bl:bdi_score_12m,
+    names_to = "bdi_score",
+    values_to = "score_value"
+  ) %>% 
+  mutate(bdi_score = recode(bdi_score, "bdi_score_bl"="bdi_score_00m"))
+
+pulsestats <- pulse_df %>% 
+  mutate(bdi_avg = ((bdi_score_bl+bdi_score_01m+bdi_score_06m+bdi_score_12m)/4)) %>% 
+  select(id,age,sex,bdi_avg) %>% 
+  filter(bdi_avg>=0) %>%
+  rename(bdi=bdi_avg)
+
+bdistats <- pulsestats %>% 
+  select(age,bdi) %>% 
+  summarise_each(funs(mean=mean, median=median, maximum=max, minimum=min))
+
+bditidy <- bdistats %>% 
+  pivot_longer(cols=everything(),
+               names_to = "statistics",
+               values_to = "values") %>% 
+  separate(statistics, into = c("varname","varstat"), sep = "_") %>% 
+  pivot_wider(id_cols = varname,
+              names_from = varstat,
+              values_from = values)
+
+pulsestats <- pulsestats %>% 
+  mutate(agecat = ifelse(age<40, "18-39", 
+                         ifelse(age>=40 & age<55, "30-54", "55+"))) %>% 
+  mutate(bdicat = ifelse(bdi<=10, "0-10",
+                         ifelse(bdi>10 & bdi<=20, "11-20",
+                                ifelse(bdi>20 & bdi<=30, "21-30","30-40"))))
+
+ggplot(pulsestats, aes(x=bdicat,fill=agecat))+
+  geom_bar(position = "fill")+
+  scale_y_continuous(labels = scales::percent)
+
+ggplot(pulsestats, aes(x=agecat,fill=bdicat))+
+  geom_bar(position = "fill")+
+  scale_y_continuous(labels = scales::percent)
+ 
+ggplot(pulsestats, aes(x=bdi,y=age))+
+  geom_smooth()+
+  geom_point()
+
+ggplot(pulsestats, aes(age))+
+  geom_histogram()
+```
+
